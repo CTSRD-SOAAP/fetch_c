@@ -10,6 +10,15 @@ CSTD?=		c99
 CFLAGS+=	-DDEBUG -g
 .endif
 
+# error checking
+.if defined(NO_SANDBOX) && (defined(SANDBOX_FETCH) || defined(SANDBOX_PARSE_URL))
+.error Sandboxing options should not be specified if NO_SANDBOX is present
+.endif
+
+.if defined(SANDBOX_FETCH) && defined(SANDBOX_PARSE_URL)
+.error Both SANDBOX_FETCH and SANDBOX_PARSE_URL cannot be specified currently
+.endif
+
 .if ${MK_OPENSSL} != "no"
 DPADD=		${LIBFETCH} ${LIBSSL} ${LIBCRYPTO}
 LDADD=		-lfetch -lssl -lcrypto
