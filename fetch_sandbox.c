@@ -40,6 +40,7 @@
 #ifndef NO_SANDBOX
 #include <sandbox.h>
 /*#include <sandbox_rpc.h>*/
+#include <sys/capability.h>
 #endif
 
 #include <fetch.h>
@@ -242,6 +243,7 @@ sandbox_fetchParseURL(struct sandbox_cb *scb, uint32_t opno, uint32_t seqno, cha
 	bcopy(buffer, &req, sizeof(req));
 
 	/* Perform the risky call */
+  DPRINTF("Calling fetchParseURL");
 	if ((urlptr = fetchParseURL(req.url_s)) == NULL) {
 		warn("%s: parse error", req.url_s);
 		rep.ret = -1; /* Indicate failure */
@@ -280,6 +282,9 @@ fsandbox(void)
 	u_char *buffer;
 	size_t len;
 
+  DPRINTF("Calling cap_enter()");
+  cap_enter();  // begin sandboxed execution
+
 	DPRINTF("===> In fetch_sandbox()");
 
 	/* Get the output fd and URL from parent */
@@ -293,6 +298,8 @@ fsandbox(void)
 			err(-1, "sandbox_recvrpc");
 		}
 	}
+
+  DPRINTF("Request received");
 
 	switch(opno) {
 #ifdef SANDBOX_FETCH
@@ -337,11 +344,13 @@ fetchParseURL_wrapper(char *URL)
 	struct url *uptr;
 
 #ifndef SANDBOX_PARSE_URL
+  DPRINTF("Directly calling fetchParseURL");
 	if ((uptr = fetchParseURL(URL)) == NULL) {
 		warnx("%s: parse error", URL);
 		return NULL;
 	}
 #else
+  DPRINTF("Proxying to sandbox");
 	size_t len;
 	struct fetch_parse_url_req req;
 	struct fetch_parse_url_rep rep;
