@@ -217,6 +217,7 @@ sandbox_fetch(struct sandbox_cb *scb, uint32_t opno, uint32_t seqno, char
 		errx(1, "%s", strerror(ENOMEM));
 
 	bzero(&rep, sizeof(rep));
+  DPRINTF("Calling fetch");
 	rep.hf_rep_retval = fetch(req.hf_req_url, req.hf_req_path);
 	iov.iov_base = &rep;
 	iov.iov_len = sizeof(rep);
