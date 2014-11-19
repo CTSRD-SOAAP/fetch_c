@@ -314,7 +314,6 @@ fsandbox(void)
 	/* exit */
 	exit(0);
 }
-
 #endif
 
 int
