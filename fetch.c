@@ -303,7 +303,7 @@ fetch(char *URL, const char *path)
 		warnx("empty URL");
 		goto failure;
 	}
-	if ((url = parse_url_wrapper(URL)) == NULL) {
+	if ((url = fetchParseURL_wrapper(URL)) == NULL) {
 		warnx("%s: parse error", URL);
 		goto failure;
 	}

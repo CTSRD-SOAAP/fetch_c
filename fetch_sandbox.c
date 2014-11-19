@@ -225,7 +225,7 @@ sandbox_fetch(struct sandbox_cb *scb, uint32_t opno, uint32_t seqno, char
 }
 
 static void
-sandbox_parse_url(struct sandbox_cb *scb, uint32_t opno, uint32_t seqno, char
+sandbox_fetchParseURL(struct sandbox_cb *scb, uint32_t opno, uint32_t seqno, char
 	*buffer, size_t len)
 {
 	struct fetch_parse_url_req req;
@@ -295,13 +295,17 @@ fsandbox(void)
 	}
 
 	switch(opno) {
+#ifdef SANDBOX_FETCH
 	case PROXIED_FETCH:
 		/* fetch the url and return */
 		sandbox_fetch(fscb, opno, seqno, (char *)buffer, len);
 		break;
+#endif
+#ifdef SANDBOX_PARSE_URL
 	case PROXIED_FETCH_PARSE_URL:
 		sandbox_parse_url(fscb, opno, seqno, (char *)buffer, len);
 		break;
+#endif    
 	/* For future expansion */
 	default:
 		errx(-1, "sandbox_main: unknown op %d", opno);
@@ -320,19 +324,19 @@ int
 fetch_wrapper(char *URL, const char *path)
 {
 	/* Currently haven't tested using both sandboxes at once */
-#if defined(NO_SANDBOX) || defined(SANDBOX_PARSE_URL)
-	return (fetch(URL, path));
-#else
+#ifdef SANDBOX_FETCH  
 	return (fetch_insandbox(URL, path));
+#else
+	return (fetch(URL, path));
 #endif
 }
 
 struct url *
-parse_url_wrapper(char *URL)
+fetchParseURL_wrapper(char *URL)
 {
 	struct url *uptr;
 
-#if ! defined(SANDBOX_PARSE_URL)
+#ifndef SANDBOX_PARSE_URL
 	if ((uptr = fetchParseURL(URL)) == NULL) {
 		warnx("%s: parse error", URL);
 		return NULL;

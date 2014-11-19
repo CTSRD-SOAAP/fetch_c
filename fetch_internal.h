@@ -92,6 +92,6 @@ void fetch_sandbox_init(void);
 void fetch_sandbox_wait(void);
 int fetch_wrapper(char *, const char *);
 int fetch(char *, const char *);
-struct url *parse_url_wrapper(char *url);
+struct url *fetchParseURL_wrapper(char *url);
 
 #endif	/* _FETCH_INTERNAL_H_ */

@@ -22,6 +22,9 @@ CFLAGS+=	-I ../libsep
 .ifdef SANDBOX_PARSE_URL
 CFLAGS+=	-DSANDBOX_PARSE_URL
 .endif
+.ifdef SANDBOX_FETCH
+CFLAGS+=  -DSANDBOX_FETCH
+.endif
 DPADD+=		${LIBSEP}
 LDADD+=		-L../libsep/ -lsep
 .else
