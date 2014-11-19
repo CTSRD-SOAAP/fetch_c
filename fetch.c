@@ -501,7 +501,7 @@ fetch(char *URL, const char *path)
 				goto failure;
 			}
 			/* we got it, open local file */
-			if ((of = fopen(path, "r+")) == NULL) {
+			if ((of = fopen_wrapper(path, "r+")) == NULL) {
 				warn("%s: fopen()", path);
 				goto failure;
 			}
@@ -569,13 +569,13 @@ fetch(char *URL, const char *path)
 					warn("%s: mkstemps()", path);
 					goto failure;
 				}
-				of = fopen(tmppath, "w");
+				of = fopen_wrapper(tmppath, "w");
 				chown(tmppath, sb.st_uid, sb.st_gid);
 				chmod(tmppath, sb.st_mode & ALLPERMS);
 			}
 		}
 		if (of == NULL)
-			of = fopen(path, "w");
+			of = fopen_wrapper(path, "w");
 		if (of == NULL) {
 			warn("%s: open()", path);
 			goto failure;

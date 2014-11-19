@@ -99,5 +99,6 @@ void fetch_sandbox_wait(void);
 int fetch_wrapper(char *, const char *);
 int fetch(char *, const char *);
 struct url *fetchParseURL_wrapper(char *url);
+FILE *fopen_wrapper(const char *path, const char *mode);
 
 #endif	/* _FETCH_INTERNAL_H_ */

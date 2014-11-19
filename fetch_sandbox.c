@@ -62,8 +62,10 @@
 #define PROXIED_FETCH 1
 #define PROXIED_FETCH_PARSE_URL 2
 #define HOST_REP_FETCHCONN 3
+#define HOST_REP_OUTF 4
 
 #define SANDBOX_REQ_FETCHCONN 101
+#define SANDBOX_REQ_OUTF 102
 
 #ifndef NO_SANDBOX
 /* fetch sandbox control block */
@@ -123,6 +125,15 @@ struct fetchconn_rep {
   int ref;
 } __packed;
 
+struct outf_req {
+	char fpath[256];
+	char mode[8];
+} __packed;
+
+struct outf_rep {
+	int ret;
+} __packed;
+
 static void fsandbox(void);
 void
 fetch_sandbox_init(void)
@@ -152,8 +163,8 @@ fetch_insandbox(char *origurl, const char *origpath)
 	struct fetch_rep rep;
 	struct iovec iov_req, iov_rep;
 	size_t len;
-  uint32_t seqno, opno;
-  u_char *buffer;
+	uint32_t seqno, opno;
+	u_char *buffer;
 
 	/* Clear out req */
 	bzero(&req, sizeof(req));
@@ -183,85 +194,138 @@ fetch_insandbox(char *origurl, const char *origpath)
 
 	iov_req.iov_base = &req;
 	iov_req.iov_len = sizeof(req);
-	iov_rep.iov_base = &rep;
-	iov_rep.iov_len = sizeof(rep);
-  /*
+
+#if 0
 	if (host_rpc(fscb, PROXIED_FETCH, &iov_req, 1,  &iov_rep, 1, &len) < 0)
 		err(-1, "host_rpc");
-
 	if (len != sizeof(rep))
 		errx(-1, "host_rpc");
-  */
-  if (host_sendrpc(fscb, PROXIED_FETCH, seqno, &iov_req, 1, NULL, 0) < 0)
-    err(-1, "host_sendrpc");
-
-  if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
-    if (errno == EPIPE) {
-      DPRINTF("[XXX] EPIPE");
-      exit(-1);
-    } else {
-      DPRINTF("[XXX] sandbox_recvrpc");
-      err(-1, "sandbox_recvrpc");
-    }
-  }
-
-  struct fetchconn *fconn;
-  struct fetchconn_req fcreq;
-  struct fetchconn_rep fcrep;
-  switch(opno) {
-    case SANDBOX_REQ_FETCHCONN:
-      if(len != sizeof(struct fetchconn_req)) {
-        DPRINTF("Ouch receive size mismatch!");
-        exit(-1);
-      }
-      memmove(&fcreq, buffer, len);
-      free(buffer);
-      /* Let's get the actual conn */
-      DPRINTF("Host: %s\nPort: %d", fcreq.host, fcreq.port);
-      fconn = fetch_connect((const char *)fcreq.host, fcreq.port, fcreq.af, fcreq.verbose);
-
-      /* Ops */
-      if (!fconn) {
-        DPRINTF("Failed to get fconn");
-        errx(-1, "fetch_connect()");
-      }
-
-      /* Send back to the sandbox what is needed */
-      fcrep.ref = fconn->ref;
-      iov_req.iov_base = &fcrep;
-      iov_req.iov_len = sizeof(fcrep);
-
-      DPRINTF("OK - 0");
-      if (host_rpc_rights(fscb, HOST_REP_FETCHCONN, &iov_req, 1, &fconn->sd, 1,
-              NULL, 0, NULL, NULL, NULL) < 0)
-        err(-1, "host_rpc");
-      DPRINTF("OK - A");
-#if 0
-      if (host_send_rights(fscb, (void *) &fcrep, sizeof(fcrep), 0,  &fconn->sd, 1) < 0)
-        err(-1, "host_send_rights");
 #endif
-      if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
-        if (errno == EPIPE) {
-          DPRINTF("[XXX] EPIPE");
-          exit(-1);
-        } else {
-          DPRINTF("[XXX] sandbox_recvrpc");
-          err(-1, "sandbox_recvrpc");
-        }
-      }
-      DPRINTF("OK - B");
-      if(len != sizeof(rep)) {
-        DPRINTF("Ouch receive size mismatch!");
-        exit(-1);
-      }
-      memmove(&rep, buffer, len);
-      free(buffer);
-      break;
-    default:
-      DPRINTF("WTF");
-  }
 
-  DPRINTF("Nice");
+	if (host_sendrpc(fscb, PROXIED_FETCH, seqno, &iov_req, 1, NULL, 0) < 0)
+		err(-1, "host_sendrpc");
+
+	struct fetchconn *fconn;
+	struct fetchconn_req fcreq;
+	struct fetchconn_rep fcrep;
+	struct outf_req ofreq;
+	struct outf_rep ofrep;
+	FILE *ofstream;
+	int ofd;
+
+	for (;;) {
+		if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
+			if (errno == EPIPE) {
+				DPRINTF("[XXX] EPIPE");
+				exit(-1);
+			} else {
+				DPRINTF("[XXX] sandbox_recvrpc");
+				err(-1, "sandbox_recvrpc");
+			}
+		}
+
+		switch(opno) {
+		case SANDBOX_REQ_FETCHCONN:
+			DPRINTF("[HOST] SANDBOX_REQ_FETCHCONN");
+			if(len != sizeof(struct fetchconn_req)) {
+				DPRINTF("Ouch receive size mismatch!");
+				exit(-1);
+			}
+			memmove(&fcreq, buffer, len);
+			free(buffer);
+			/* Let's get the actual conn */
+			DPRINTF("Host: %s\nPort: %d", fcreq.host, fcreq.port);
+			fconn = fetch_connect((const char *)fcreq.host, fcreq.port,
+				fcreq.af, fcreq.verbose);
+
+			/* Ops */
+			if (!fconn) {
+				DPRINTF("Failed to get fconn");
+				errx(-1, "fetch_connect()");
+			}
+
+			/* Send back to the sandbox what is needed */
+			fcrep.ref = fconn->ref;
+			iov_req.iov_base = &fcrep;
+			iov_req.iov_len = sizeof(fcrep);
+
+
+			if (host_rpc_rights(fscb, HOST_REP_FETCHCONN, &iov_req, 1, &fconn->sd, 1,
+				NULL, 0, NULL, NULL, NULL) < 0)
+				err(-1, "host_rpc");
+#if 0
+			if (host_send_rights(fscb, (void *) &fcrep, sizeof(fcrep), 0,  &fconn->sd, 1) < 0)
+				err(-1, "host_send_rights");
+
+			if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
+				if (errno == EPIPE) {
+					DPRINTF("[XXX] EPIPE");
+					exit(-1);
+				} else {
+					DPRINTF("[XXX] sandbox_recvrpc");
+					err(-1, "sandbox_recvrpc");
+				}
+			}
+
+			DPRINTF("OK - B");
+			if(len != sizeof(rep)) {
+				DPRINTF("Ouch receive size mismatch!");
+				exit(-1);
+			}
+			memmove(&rep, buffer, len);
+			free(buffer);
+#endif
+			break;
+
+		case SANDBOX_REQ_OUTF:
+			DPRINTF("[HOST] SANDBOX_REQ_OUTF");
+			if(len != sizeof(struct outf_req)) {
+				DPRINTF("Ouch receive size mismatch!");
+				exit(-1);
+			}
+			memmove(&ofreq, buffer, len);
+			free(buffer);
+			ofstream = fopen(ofreq.fpath, ofreq.mode);
+			if(!ofstream) {
+				ofrep.ret = -1;
+				DPRINTF("We don't handle failure yet");
+				exit(-1);
+			}
+
+			/* Send back to the sandbox what is needed */
+			ofrep.ret = 0;
+			iov_req.iov_base = &ofrep;
+			iov_req.iov_len = sizeof(ofrep);
+
+			ofd = fileno(ofstream);
+			if (host_rpc_rights(fscb, HOST_REP_OUTF, &iov_req, 1,
+				&ofd, 1, NULL, 0, NULL, NULL, NULL) < 0)
+				err(-1, "host_rpc");
+			DPRINTF("[HOST] Output file descriptor sent");
+			if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
+				if (errno == EPIPE) {
+					DPRINTF("[XXX] EPIPE");
+					exit(-1);
+				} else {
+					DPRINTF("[XXX] sandbox_recvrpc");
+					err(-1, "sandbox_recvrpc");
+				}
+			}
+			if(len != sizeof(rep)) {
+				DPRINTF("Ouch receive size mismatch!");
+				exit(-1);
+			}
+			memmove(&rep, buffer, len);
+			free(buffer);
+			DPRINTF("[HOST] Got the final response");
+			goto out;
+		default:
+			DPRINTF("WTF");
+		}
+	}
+
+out:
+	DPRINTF("Nice");
 	return (rep.hf_rep_retval);
 }
 
@@ -545,4 +609,69 @@ fetchParseURL_wrapper(char *URL)
 		uptr->offset);
 
 	return uptr;
+}
+
+FILE *
+fopen_wrapper(const char *path, const char *mode)
+{
+    DPRINTF("In fopen_wrapper");
+
+#ifdef SANDBOX_FETCH
+	struct outf_req ofreq;
+	struct outf_rep ofrep;
+	uint32_t seqno = 0;
+	struct iovec iov_req, iov_rep;
+	int fdarray[1], fdcount; /* We expect a fd for SSL_INIT op */
+	int *fdp;
+	uint32_t opno;
+	u_char *buffer;
+	size_t len;
+
+	bzero(&ofreq, sizeof(struct outf_req));
+	bzero(&ofrep, sizeof(struct outf_rep));
+
+	strlcpy(ofreq.fpath, path, MMIN(strlen(path) + 1, 256));
+	strlcpy(ofreq.mode, mode, MMIN(strlen(mode) + 1, 8));
+
+	/*bzero(&iov_req, sizeof(struct iovec));*/
+	/*bzero(&iov_rep, sizeof(struct iovec));*/
+
+	iov_req.iov_base = &ofreq;
+	iov_req.iov_len = sizeof(ofreq);
+
+	if (sandbox_sendrpc(fscb, SANDBOX_REQ_OUTF, seqno, &iov_req, 1) < 0)
+		err(-1, "sandbox_sendrpc");
+
+	/* Get a ptr to fdarry and update the number of fds we are expecting */
+	fdp = fdarray;
+	fdcount = 1;
+	if (sandbox_recvrpc_rights(fscb, &opno, &seqno, &buffer, &len, fdp, &fdcount)
+		< 0) {
+		if (errno == EPIPE)
+			DPRINTF("[XXX] EPIPE");
+		else
+			DPRINTF("[XXX] sandbox_recvrpc_rights");
+		exit(-1);
+	}
+
+	/* Demangle data */
+	if (len != sizeof(struct outf_rep)) {
+		DPRINTF("Received len mismatch");
+		exit(-1);
+	}
+	memmove(&ofrep, buffer, len);
+	free(buffer);
+
+	if (ofrep.ret == -1) {
+		return NULL;
+	}
+
+	DPRINTF("[SANDBOX] Got the file descriptor from parent");
+
+	/* Okay lets get a stream out of the fd */
+	return(fdopen(fdarray[0], mode));
+#else
+    return fopen(path, mode);
+#endif
+
 }
