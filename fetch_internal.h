@@ -92,7 +92,7 @@ int rv;
 
 /* Prototypes */
 #ifndef NO_SANDBOX
-conn_t *fetch_connect_fromsandbox(const char *, int, int, int);
+conn_t *fetch_connect_inparent(const char *, int, int, int);
 void fetch_sandbox_init(void);
 void fetch_sandbox_wait(void);
 #endif

@@ -416,7 +416,7 @@ fetch(char *URL, const char *path)
 	if (timeout)
 		alarm(timeout);
 #ifdef SANDBOX_FETCH
-  url->conn_fn = fetch_connect_fromsandbox;
+  url->conn_fn = fetch_connect_inparent;
 #endif
 	f = fetchXGet(url, &us, flags);
 	if (timeout)

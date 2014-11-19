@@ -316,7 +316,7 @@ sandbox_fetch(struct sandbox_cb *scb, uint32_t opno, uint32_t seqno, char
 
 /* called in sandboxed process */
 conn_t *
-fetch_connect_fromsandbox(const char *host, int port, int af, int verbose)
+fetch_connect_inparent(const char *host, int port, int af, int verbose)
 {
   conn_t *conn;
   struct fetchconn_req fcreq;
