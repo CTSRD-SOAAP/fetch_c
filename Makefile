@@ -27,7 +27,7 @@ DPADD=		${LIBFETCH} ${LIBMD}
 LDADD=		-lfetch -lmd
 .endif
 .ifndef NO_SANDBOX
-CFLAGS+=	-I ../libsep
+CFLAGS+=	-I ../libsep -I ../libfetch_c
 .ifdef SANDBOX_PARSE_URL
 CFLAGS+=	-DSANDBOX_PARSE_URL
 .endif

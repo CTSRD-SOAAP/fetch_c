@@ -33,6 +33,9 @@
 #include <limits.h>
 #include <sys/param.h>
 #include <sys/limits.h>
+#ifndef NO_SANDBOX
+#include <common.h>
+#endif
 #include <fetch.h>
 /* Maximum URL length handled */
 #define URL_MAX	2048
@@ -88,8 +91,11 @@ char	*buf;		/* transfer buffer */
 int rv;
 
 /* Prototypes */
+#ifndef NO_SANDBOX
+conn_t *fetch_connect_fromsandbox(const char *, int, int, int);
 void fetch_sandbox_init(void);
 void fetch_sandbox_wait(void);
+#endif
 int fetch_wrapper(char *, const char *);
 int fetch(char *, const char *);
 struct url *fetchParseURL_wrapper(char *url);
