@@ -303,7 +303,7 @@ fsandbox(void)
 #endif
 #ifdef SANDBOX_PARSE_URL
 	case PROXIED_FETCH_PARSE_URL:
-		sandbox_parse_url(fscb, opno, seqno, (char *)buffer, len);
+		sandbox_fetchParseURL(fscb, opno, seqno, (char *)buffer, len);
 		break;
 #endif    
 	/* For future expansion */
