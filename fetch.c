@@ -47,6 +47,8 @@ __FBSDID("$FreeBSD: stable/9/usr.bin/fetch/fetch.c 244499 2012-12-20 18:13:04Z e
 
 #include <fetch.h>
 
+#include "soaap.h"
+
 #define MINBUFSIZE	4096
 #define TIMEOUT		120
 
@@ -309,6 +311,7 @@ query_auth(struct url *URL)
 /*
  * Fetch a file
  */
+__soaap_sandbox_persistent("net")
 static int
 fetch(char *URL, const char *path)
 {

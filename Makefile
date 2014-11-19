@@ -11,5 +11,8 @@ LDADD=		-lfetch -lssl -lcrypto
 DPADD=		${LIBFETCH} ${LIBMD}
 LDADD=		-lfetch -lmd
 .endif
+.ifdef WITH_SOAAP
+CFLAGS+=  -I${SOAAP_SOURCE_DIR}/include
+.endif
 
 .include <bsd.prog.mk>
