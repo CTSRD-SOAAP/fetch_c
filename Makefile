@@ -12,7 +12,8 @@ DPADD=		${LIBFETCH} ${LIBMD}
 LDADD=		-lfetch -lmd
 .endif
 .ifdef WITH_SOAAP
-CFLAGS+=  -I${SOAAP_SOURCE_DIR}/include
+CC=      ${LLVM_BUILD_DIR}/bin/clang
+CFLAGS+=  -I${SOAAP_SOURCE_DIR}/include -I../libfetch_c
 .endif
 
 .include <bsd.prog.mk>
