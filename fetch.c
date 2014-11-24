@@ -46,11 +46,15 @@ __FBSDID("$FreeBSD: stable/9/usr.bin/fetch/fetch.c 244499 2012-12-20 18:13:04Z e
 #include <unistd.h>
 
 #include <fetch.h>
+#include <common.h>
 
 #include "soaap.h"
+#include "soaap_perf.h"
 
 #define MINBUFSIZE	4096
 #define TIMEOUT		120
+
+__soaap_callgates(net, fetch_connect, stat, fopen)
 
 /* Option flags */
 int	 A_flag;	/*    -A: do not follow 302 redirects */
