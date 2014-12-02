@@ -69,12 +69,14 @@
 #define HOST_REP_OUTF 4
 #define HOST_REP_STAT_IMS 5
 #define HOST_REP_STAT_RESTART 6
+#define HOST_REP_UTIMES 7
 
 #define SANDBOX_FINISHED 100
 #define SANDBOX_REQ_FETCHCONN 101
 #define SANDBOX_REQ_OUTF 102
 #define SANDBOX_REQ_STAT_IMS 103
 #define SANDBOX_REQ_STAT_RESTART 104
+#define SANDBOX_REQ_UTIMES 105
 
 
 #ifndef NO_SANDBOX
@@ -151,6 +153,15 @@ struct stat_req {
 struct stat_rep {
 	int ret;
   struct stat s;
+} __packed;
+
+struct utimes_req {
+	char fname[256];
+} __packed;
+
+struct utimes_rep {
+	int ret;
+  struct timeval times[2];
 } __packed;
 
 static void fsandbox(void);
@@ -234,6 +245,9 @@ fetch_insandbox(char *origurl, const char *origpath)
 	struct stat_req streq;
 	struct stat_rep strep;
   struct stat s;
+	struct utimes_req ureq;
+	struct utimes_rep urep;
+  const struct timeval times[2];
 
 	for (;;) {
 		if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
@@ -343,6 +357,7 @@ fetch_insandbox(char *origurl, const char *origpath)
         DPRINTF("[HOST] Got the final response");
         goto out;
 #endif
+        break;
       }
       case SANDBOX_REQ_STAT_IMS: {
         DPRINTF("[HOST] SANDBOX_REQ_STAT_IMS");
@@ -384,7 +399,30 @@ fetch_insandbox(char *origurl, const char *origpath)
         iov_req.iov_base = &strep;
         iov_req.iov_len = sizeof(strep);
 
-        if (host_rpc(fscb, HOST_REP_STAT_IMS, &iov_req, 1, NULL, 0, NULL) < 0)
+        if (host_rpc(fscb, HOST_REP_STAT_RESTART, &iov_req, 1, NULL, 0, NULL) < 0)
+          err(-1, "host_rpc");
+        break;
+      }
+      case SANDBOX_REQ_UTIMES: {
+        DPRINTF("[HOST] SANDBOX_REQ_UTIMES");
+        if(len != sizeof(struct utimes_req)) {
+          DPRINTF("Ouch receive size mismatch!");
+          exit(-1);
+        }
+        memmove(&ureq, buffer, len);
+        free(buffer);
+
+        /* Send back to the sandbox what is needed */
+        DPRINTF("utimes(\"%s\")", ureq.fname);
+        urep.ret = utimes(ureq.fname, times);
+        DPRINTF("utimes returned %d", urep.ret);
+        memmove(&urep.times, times, sizeof(times));
+        bzero((void*)times, sizeof(times));
+
+        iov_req.iov_base = &urep;
+        iov_req.iov_len = sizeof(urep);
+
+        if (host_rpc(fscb, HOST_REP_UTIMES, &iov_req, 1, NULL, 0, NULL) < 0)
           err(-1, "host_rpc");
         break;
       }
@@ -756,6 +794,7 @@ fopen_wrapper(const char *path, const char *mode)
 #endif
 
 }
+
 int
 stat_ims_wrapper(const char *path, struct stat *s)
 {
@@ -814,4 +853,53 @@ stat_wrapper(const char *path, struct stat *s, uint32_t op)
   
   DPRINTF("[SANDBOX] received struct, return value was: %d", strep.ret);
   return strep.ret;
+}
+
+int utimes_wrapper(const char *filename, const struct timeval times[2]) {
+#ifdef SANDBOX_FETCH
+  struct utimes_req ureq;
+  struct utimes_rep urep;
+  uint32_t seqno = 0;
+  struct iovec iov_req, iov_rep;
+  uint32_t opno;
+  u_char *buffer;
+  size_t len;
+
+  bzero(&ureq, sizeof(struct utimes_req));
+  bzero(&urep, sizeof(struct utimes_rep));
+
+  strlcpy(ureq.fname, filename, MMIN(strlen(filename)+1, 256));
+
+  iov_req.iov_base = &ureq;
+  iov_req.iov_len = sizeof(ureq);
+
+  DPRINTF("[SANDBOX] Proxying utimes() call to parent");
+
+  if (sandbox_sendrpc(fscb, SANDBOX_REQ_UTIMES, seqno, &iov_req, 1) < 0)
+    err(-1, "sandbox_sendrpc");
+
+  if (sandbox_recvrpc(fscb, &opno, &seqno, &buffer, &len) < 0) {
+    if (errno == EPIPE)
+      DPRINTF("[XXX] EPIPE");
+    else
+      DPRINTF("[XXX] sandbox_recvrpc");
+    exit(-1);
+  }
+
+  /* Demangle data */
+  if (len != sizeof(struct utimes_rep)) {
+    DPRINTF("Received len mismatch");
+    exit(-1);
+  }
+  memmove(&urep, buffer, len);
+  free(buffer);
+
+  DPRINTF("sizeof(urep.times): %lu", sizeof(urep.times));
+  memmove((void*)times, &urep.times, sizeof(urep.times));
+  
+  DPRINTF("[SANDBOX] received utimes reply, return value was: %d", urep.ret);
+  return urep.ret;
+#else
+  return utimes(filename, times);
+#endif
 }
