@@ -157,11 +157,11 @@ struct stat_rep {
 
 struct utimes_req {
 	char fname[256];
+  struct timeval times[2];
 } __packed;
 
 struct utimes_rep {
 	int ret;
-  struct timeval times[2];
 } __packed;
 
 static void fsandbox(void);
@@ -247,7 +247,6 @@ fetch_insandbox(char *origurl, const char *origpath)
   struct stat s;
 	struct utimes_req ureq;
 	struct utimes_rep urep;
-  const struct timeval times[2];
 
 	for (;;) {
 		if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
@@ -414,10 +413,9 @@ fetch_insandbox(char *origurl, const char *origpath)
 
         /* Send back to the sandbox what is needed */
         DPRINTF("utimes(\"%s\")", ureq.fname);
-        urep.ret = utimes(ureq.fname, times);
+        DPRINTF("sizeof(ureq.times): %d", sizeof(ureq.times));
+        urep.ret = utimes(ureq.fname, ureq.times);
         DPRINTF("utimes returned %d", urep.ret);
-        memmove(&urep.times, times, sizeof(times));
-        bzero((void*)times, sizeof(times));
 
         iov_req.iov_base = &urep;
         iov_req.iov_len = sizeof(urep);
@@ -869,6 +867,8 @@ int utimes_wrapper(const char *filename, const struct timeval times[2]) {
   bzero(&urep, sizeof(struct utimes_rep));
 
   strlcpy(ureq.fname, filename, MMIN(strlen(filename)+1, 256));
+  DPRINTF("sizeof(ureq.times): %d", sizeof(ureq.times));
+  memmove(ureq.times, times, sizeof(ureq.times));
 
   iov_req.iov_base = &ureq;
   iov_req.iov_len = sizeof(ureq);
@@ -894,9 +894,6 @@ int utimes_wrapper(const char *filename, const struct timeval times[2]) {
   memmove(&urep, buffer, len);
   free(buffer);
 
-  DPRINTF("sizeof(urep.times): %lu", sizeof(urep.times));
-  memmove((void*)times, &urep.times, sizeof(urep.times));
-  
   DPRINTF("[SANDBOX] received utimes reply, return value was: %d", urep.ret);
   return urep.ret;
 #else
