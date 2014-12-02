@@ -8,6 +8,8 @@ SRCS=		fetch.c fetch_sandbox.c
 CSTD?=		c99
 .ifdef DEBUG
 CFLAGS+=	-DDEBUG -g
+.else
+CFLAGS+=  -DNDEBUG
 .endif
 
 # error checking
