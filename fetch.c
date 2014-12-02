@@ -348,7 +348,7 @@ fetch(char *URL, const char *path)
 			strcat(flags, "A");
 		timeout = T_secs ? T_secs : http_timeout;
 		if (i_flag) {
-			if (stat(i_filename, &sb)) {
+			if (stat_ims_wrapper(i_filename, &sb)) {
 				warn("%s: stat()", i_filename);
 				goto failure;
 			}
@@ -395,7 +395,7 @@ fetch(char *URL, const char *path)
 	 */
 	sb.st_size = -1;
 	if (!o_stdout) {
-		r = stat(path, &sb);
+		r = stat_restart_wrapper(path, &sb);
 		if (r == 0 && r_flag && S_ISREG(sb.st_mode)) {
 			url->offset = sb.st_size;
 		} else if (r == -1 || !S_ISREG(sb.st_mode)) {
@@ -636,7 +636,7 @@ fetch(char *URL, const char *path)
  signal:
 	/* set mtime of local file */
 	if (!n_flag && us.mtime && !o_stdout && of != NULL &&
-	    (stat(path, &sb) != -1) && sb.st_mode & S_IFREG) {
+	    (fstat(fileno(of), &sb) != -1) && sb.st_mode & S_IFREG) {
 		struct timeval tv[2];
 
 		fflush(of);
@@ -694,7 +694,7 @@ fetch(char *URL, const char *path)
 	goto done;
  failure:
 	if (of && of != stdout && !R_flag && !r_flag)
-		if (stat(path, &sb) != -1 && (sb.st_mode & S_IFREG))
+		if (fstat(fileno(of), &sb) != -1 && (sb.st_mode & S_IFREG))
 			unlink(tmppath ? tmppath : path);
 	if (R_flag && tmppath != NULL && sb.st_size == -1)
 		rename(tmppath, path); /* ignore errors here */

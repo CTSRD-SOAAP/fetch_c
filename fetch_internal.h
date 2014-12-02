@@ -100,5 +100,8 @@ int fetch_wrapper(char *, const char *);
 int fetch(char *, const char *);
 struct url *fetchParseURL_wrapper(char *url);
 FILE *fopen_wrapper(const char *path, const char *mode);
+int stat_ims_wrapper(const char *path, struct stat *s);
+int stat_restart_wrapper(const char *path, struct stat *s);
+int stat_wrapper(const char *path, struct stat *s, uint32_t op);
 
 #endif	/* _FETCH_INTERNAL_H_ */
