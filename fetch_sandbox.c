@@ -70,6 +70,7 @@
 #define HOST_REP_STAT_IMS 5
 #define HOST_REP_STAT_RESTART 6
 #define HOST_REP_UTIMES 7
+#define HOST_REP_MKSTEMPS 8
 
 #define SANDBOX_FINISHED 100
 #define SANDBOX_REQ_FETCHCONN 101
@@ -77,7 +78,7 @@
 #define SANDBOX_REQ_STAT_IMS 103
 #define SANDBOX_REQ_STAT_RESTART 104
 #define SANDBOX_REQ_UTIMES 105
-
+#define SANDBOX_REQ_MKSTEMPS 106
 
 #ifndef NO_SANDBOX
 /* fetch sandbox control block */
@@ -164,6 +165,16 @@ struct utimes_rep {
 	int ret;
 } __packed;
 
+struct mkstemps_req {
+	char template[256];
+  int suffixlen;
+} __packed;
+
+struct mkstemps_rep {
+	int ret;
+  char template[256];
+} __packed;
+
 static void fsandbox(void);
 void
 fetch_sandbox_init(void)
@@ -247,6 +258,8 @@ fetch_insandbox(char *origurl, const char *origpath)
   struct stat s;
 	struct utimes_req ureq;
 	struct utimes_rep urep;
+	struct mkstemps_req mkreq;
+	struct mkstemps_rep mkrep;
 
 	for (;;) {
 		if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
@@ -422,6 +435,30 @@ fetch_insandbox(char *origurl, const char *origpath)
 
         if (host_rpc(fscb, HOST_REP_UTIMES, &iov_req, 1, NULL, 0, NULL) < 0)
           err(-1, "host_rpc");
+        break;
+      }
+      case SANDBOX_REQ_MKSTEMPS: {
+        DPRINTF("[HOST] SANDBOX_REQ_MKSTEMPS");
+        if(len != sizeof(struct mkstemps_req)) {
+          DPRINTF("Ouch receive size mismatch!");
+          exit(-1);
+        }
+        memmove(&mkreq, buffer, len);
+        free(buffer);
+        DPRINTF("[HOST] mkreq.template before call: %s", mkreq.template);
+        mkrep.ret = mkstemps(mkreq.template, mkreq.suffixlen);
+        strlcpy(mkrep.template, mkreq.template, strlen(mkreq.template)+1);
+
+        DPRINTF("[HOST] mkreq.template after call: %s", mkreq.template);
+
+        /* Send back to the sandbox what is needed */
+        iov_req.iov_base = &mkrep;
+        iov_req.iov_len = sizeof(mkrep);
+
+        if (host_rpc_rights(fscb, HOST_REP_MKSTEMPS, &iov_req, 1,
+          &mkrep.ret, 1, NULL, 0, NULL, NULL, NULL) < 0)
+          err(-1, "host_rpc");
+        DPRINTF("[HOST] file descriptor sent");
         break;
       }
       case SANDBOX_FINISHED: {
@@ -898,5 +935,67 @@ int utimes_wrapper(const char *filename, const struct timeval times[2]) {
   return urep.ret;
 #else
   return utimes(filename, times);
+#endif
+}
+
+int
+mkstemps_wrapper(char *template, int suffixlen)
+{
+    DPRINTF("In mkstemps_wrapper");
+    DPRINTF("[SANDBOX] template: %s", template);
+
+#ifdef SANDBOX_FETCH
+	struct mkstemps_req mkreq;
+	struct mkstemps_rep mkrep;
+	uint32_t seqno = 0;
+	struct iovec iov_req, iov_rep;
+	int fdarray[1], fdcount; /* We expect a fd for SSL_INIT op */
+	int *fdp;
+	uint32_t opno;
+	u_char *buffer;
+	size_t len;
+
+	bzero(&mkreq, sizeof(struct mkstemps_req));
+	bzero(&mkrep, sizeof(struct mkstemps_rep));
+
+	strlcpy(mkreq.template, template, MMIN(strlen(template) + 1, 256));
+  mkreq.suffixlen = suffixlen;
+
+	/*bzero(&iov_req, sizeof(struct iovec));*/
+	/*bzero(&iov_rep, sizeof(struct iovec));*/
+
+	iov_req.iov_base = &mkreq;
+	iov_req.iov_len = sizeof(mkreq);
+
+	if (sandbox_sendrpc(fscb, SANDBOX_REQ_MKSTEMPS, seqno, &iov_req, 1) < 0)
+		err(-1, "sandbox_sendrpc");
+
+	/* Get a ptr to fdarry and update the number of fds we are expecting */
+	fdp = fdarray;
+	fdcount = 1;
+	if (sandbox_recvrpc_rights(fscb, &opno, &seqno, &buffer, &len, fdp, &fdcount)
+		< 0) {
+		if (errno == EPIPE)
+			DPRINTF("[XXX] EPIPE");
+		else
+			DPRINTF("[XXX] sandbox_recvrpc_rights");
+		exit(-1);
+	}
+
+	/* Demangle data */
+	if (len != sizeof(struct mkstemps_rep)) {
+		DPRINTF("Received len mismatch");
+		exit(-1);
+	}
+	memmove(&mkrep, buffer, len);
+	free(buffer);
+
+  strlcpy(template, mkrep.template, MMIN(strlen(template) + 1, 256));
+	DPRINTF("[SANDBOX] Got the file descriptor from parent");
+  DPRINTF("[SANDBOX] ret: %d, fd: %d", mkrep.ret, fdp[0]);
+  DPRINTF("[SANDBOX] template: %s", template);
+	return (mkrep.ret == -1) ? -1 : fdp[0];
+#else
+    return mkstemps(template, suffixlen);
 #endif
 }

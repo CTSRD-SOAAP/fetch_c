@@ -104,5 +104,6 @@ int stat_ims_wrapper(const char *path, struct stat *s);
 int stat_restart_wrapper(const char *path, struct stat *s);
 int stat_wrapper(const char *path, struct stat *s, uint32_t op);
 int utimes_wrapper(const char *filename, const struct timeval times[2]);
+int mkstemps_wrapper(char *template, int suffixlen);
 
 #endif	/* _FETCH_INTERNAL_H_ */

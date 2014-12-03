@@ -565,7 +565,7 @@ fetch(char *URL, const char *path)
 			asprintf(&tmppath, "%.*s.fetch.XXXXXX.%s",
 			    (int)(slash - path), path, slash);
 			if (tmppath != NULL) {
-				if (mkstemps(tmppath, strlen(slash) + 1) == -1) {
+				if (mkstemps_wrapper(tmppath, strlen(slash) + 1) == -1) {
 					warn("%s: mkstemps()", path);
 					goto failure;
 				}
