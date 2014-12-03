@@ -71,6 +71,7 @@
 #define HOST_REP_STAT_RESTART 6
 #define HOST_REP_UTIMES 7
 #define HOST_REP_MKSTEMPS 8
+#define HOST_REP_RENAME 9
 
 #define SANDBOX_FINISHED 100
 #define SANDBOX_REQ_FETCHCONN 101
@@ -79,6 +80,7 @@
 #define SANDBOX_REQ_STAT_RESTART 104
 #define SANDBOX_REQ_UTIMES 105
 #define SANDBOX_REQ_MKSTEMPS 106
+#define SANDBOX_REQ_RENAME 107
 
 #ifndef NO_SANDBOX
 /* fetch sandbox control block */
@@ -175,6 +177,15 @@ struct mkstemps_rep {
   char template[256];
 } __packed;
 
+struct rename_req {
+	char from[256];
+	char to[256];
+} __packed;
+
+struct rename_rep {
+	int ret;
+} __packed;
+
 static void fsandbox(void);
 void
 fetch_sandbox_init(void)
@@ -260,6 +271,8 @@ fetch_insandbox(char *origurl, const char *origpath)
 	struct utimes_rep urep;
 	struct mkstemps_req mkreq;
 	struct mkstemps_rep mkrep;
+	struct rename_req rnreq;
+	struct rename_rep rnrep;
 
 	for (;;) {
 		if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
@@ -459,6 +472,27 @@ fetch_insandbox(char *origurl, const char *origpath)
           &mkrep.ret, 1, NULL, 0, NULL, NULL, NULL) < 0)
           err(-1, "host_rpc");
         DPRINTF("[HOST] file descriptor sent");
+        break;
+      }
+      case SANDBOX_REQ_RENAME: {
+        DPRINTF("[HOST] SANDBOX_REQ_RENAME");
+        if(len != sizeof(struct rename_req)) {
+          DPRINTF("Ouch receive size mismatch!");
+          exit(-1);
+        }
+        memmove(&rnreq, buffer, len);
+        free(buffer);
+
+        /* Send back to the sandbox what is needed */
+        DPRINTF("rename(\"%s\",\"%s\")", rnreq.from, rnreq.to);
+        rnrep.ret = rename(rnreq.from, rnreq.to);
+        DPRINTF("return value: %d", rnrep.ret);
+
+        iov_req.iov_base = &rnrep;
+        iov_req.iov_len = sizeof(rnrep);
+
+        if (host_rpc(fscb, HOST_REP_RENAME, &iov_req, 1, NULL, 0, NULL) < 0)
+          err(-1, "host_rpc");
         break;
       }
       case SANDBOX_FINISHED: {
@@ -998,4 +1032,49 @@ mkstemps_wrapper(char *template, int suffixlen)
 #else
     return mkstemps(template, suffixlen);
 #endif
+}
+
+int
+rename_wrapper(const char *old, const char *new)
+{
+  struct rename_req rnreq;
+  struct rename_rep rnrep;
+  uint32_t seqno = 0;
+  struct iovec iov_req, iov_rep;
+  uint32_t opno;
+  u_char *buffer;
+  size_t len;
+
+  bzero(&rnreq, sizeof(struct rename_req));
+  bzero(&rnrep, sizeof(struct rename_rep));
+
+  strlcpy(rnreq.from, old, MMIN(strlen(old)+1, 256));
+  strlcpy(rnreq.to, new, MMIN(strlen(new)+1, 256));
+
+  iov_req.iov_base = &rnreq;
+  iov_req.iov_len = sizeof(rnreq);
+
+  DPRINTF("[SANDBOX] Proxying rename() call to parent");
+
+  if (sandbox_sendrpc(fscb, SANDBOX_REQ_RENAME, seqno, &iov_req, 1) < 0)
+    err(-1, "sandbox_sendrpc");
+
+  if (sandbox_recvrpc(fscb, &opno, &seqno, &buffer, &len) < 0) {
+    if (errno == EPIPE)
+      DPRINTF("[XXX] EPIPE");
+    else
+      DPRINTF("[XXX] sandbox_recvrpc");
+    exit(-1);
+  }
+
+  /* Demangle data */
+  if (len != sizeof(struct rename_rep)) {
+    DPRINTF("Received len mismatch");
+    exit(-1);
+  }
+  memmove(&rnrep, buffer, len);
+  free(buffer);
+  
+  DPRINTF("[SANDBOX] received return value: %d", rnrep.ret);
+  return rnrep.ret;
 }

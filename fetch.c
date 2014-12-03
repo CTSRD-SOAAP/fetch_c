@@ -687,7 +687,7 @@ fetch(char *URL, const char *path)
 
  success:
 	r = 0;
-	if (tmppath != NULL && rename(tmppath, path) == -1) {
+	if (tmppath != NULL && rename_wrapper(tmppath, path) == -1) {
 		warn("%s: rename()", path);
 		goto failure_keep;
 	}
@@ -697,7 +697,7 @@ fetch(char *URL, const char *path)
 		if (fstat(fileno(of), &sb) != -1 && (sb.st_mode & S_IFREG))
 			unlink(tmppath ? tmppath : path);
 	if (R_flag && tmppath != NULL && sb.st_size == -1)
-		rename(tmppath, path); /* ignore errors here */
+		rename_wrapper(tmppath, path); /* ignore errors here */
  failure_keep:
 	r = -1;
 	goto done;
