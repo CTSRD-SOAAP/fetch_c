@@ -72,6 +72,8 @@
 #define HOST_REP_UTIMES 7
 #define HOST_REP_MKSTEMPS 8
 #define HOST_REP_RENAME 9
+#define HOST_REP_SYMLINK 10
+#define HOST_REP_UNLINK 11
 
 #define SANDBOX_FINISHED 100
 #define SANDBOX_REQ_FETCHCONN 101
@@ -81,6 +83,8 @@
 #define SANDBOX_REQ_UTIMES 105
 #define SANDBOX_REQ_MKSTEMPS 106
 #define SANDBOX_REQ_RENAME 107
+#define SANDBOX_REQ_SYMLINK 108
+#define SANDBOX_REQ_UNLINK 109
 
 #ifndef NO_SANDBOX
 /* fetch sandbox control block */
@@ -186,6 +190,23 @@ struct rename_rep {
 	int ret;
 } __packed;
 
+struct symlink_req {
+	char target[256];
+	char linkpath[256];
+} __packed;
+
+struct symlink_rep {
+	int ret;
+} __packed;
+
+struct unlink_req {
+	char path[256];
+} __packed;
+
+struct unlink_rep {
+	int ret;
+} __packed;
+
 static void fsandbox(void);
 void
 fetch_sandbox_init(void)
@@ -273,6 +294,10 @@ fetch_insandbox(char *origurl, const char *origpath)
 	struct mkstemps_rep mkrep;
 	struct rename_req rnreq;
 	struct rename_rep rnrep;
+	struct symlink_req sreq;
+	struct symlink_rep srep;
+	struct unlink_req unreq;
+	struct unlink_rep unrep;
 
 	for (;;) {
 		if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
@@ -492,6 +517,48 @@ fetch_insandbox(char *origurl, const char *origpath)
         iov_req.iov_len = sizeof(rnrep);
 
         if (host_rpc(fscb, HOST_REP_RENAME, &iov_req, 1, NULL, 0, NULL) < 0)
+          err(-1, "host_rpc");
+        break;
+      }
+      case SANDBOX_REQ_SYMLINK: {
+        DPRINTF("[HOST] SANDBOX_REQ_SYMLINK");
+        if(len != sizeof(struct symlink_req)) {
+          DPRINTF("Ouch receive size mismatch!");
+          exit(-1);
+        }
+        memmove(&sreq, buffer, len);
+        free(buffer);
+
+        /* Send back to the sandbox what is needed */
+        DPRINTF("symlink(\"%s\",\"%s\")", sreq.target, sreq.linkpath);
+        srep.ret = symlink(sreq.target, sreq.linkpath);
+        DPRINTF("return value: %d", srep.ret);
+
+        iov_req.iov_base = &srep;
+        iov_req.iov_len = sizeof(srep);
+
+        if (host_rpc(fscb, HOST_REP_SYMLINK, &iov_req, 1, NULL, 0, NULL) < 0)
+          err(-1, "host_rpc");
+        break;
+      }
+      case SANDBOX_REQ_UNLINK: {
+        DPRINTF("[HOST] SANDBOX_REQ_UNLINK");
+        if(len != sizeof(struct unlink_req)) {
+          DPRINTF("Ouch receive size mismatch!");
+          exit(-1);
+        }
+        memmove(&unreq, buffer, len);
+        free(buffer);
+
+        /* Send back to the sandbox what is needed */
+        DPRINTF("unlink(\"%s\")", unreq.path);
+        unrep.ret = unlink(unreq.path);
+        DPRINTF("return value: %d", unrep.ret);
+
+        iov_req.iov_base = &unrep;
+        iov_req.iov_len = sizeof(unrep);
+
+        if (host_rpc(fscb, HOST_REP_UNLINK, &iov_req, 1, NULL, 0, NULL) < 0)
           err(-1, "host_rpc");
         break;
       }
@@ -1077,4 +1144,93 @@ rename_wrapper(const char *old, const char *new)
   
   DPRINTF("[SANDBOX] received return value: %d", rnrep.ret);
   return rnrep.ret;
+}
+
+int
+symlink_wrapper(const char *target, const char *linkpath)
+{
+  struct symlink_req sreq;
+  struct symlink_rep srep;
+  uint32_t seqno = 0;
+  struct iovec iov_req, iov_rep;
+  uint32_t opno;
+  u_char *buffer;
+  size_t len;
+
+  bzero(&sreq, sizeof(struct symlink_req));
+  bzero(&srep, sizeof(struct symlink_rep));
+
+  strlcpy(sreq.target, target, MMIN(strlen(target)+1, 256));
+  strlcpy(sreq.linkpath, linkpath, MMIN(strlen(linkpath)+1, 256));
+
+  iov_req.iov_base = &sreq;
+  iov_req.iov_len = sizeof(sreq);
+
+  DPRINTF("[SANDBOX] Proxying symlink() call to parent");
+
+  if (sandbox_sendrpc(fscb, SANDBOX_REQ_SYMLINK, seqno, &iov_req, 1) < 0)
+    err(-1, "sandbox_sendrpc");
+
+  if (sandbox_recvrpc(fscb, &opno, &seqno, &buffer, &len) < 0) {
+    if (errno == EPIPE)
+      DPRINTF("[XXX] EPIPE");
+    else
+      DPRINTF("[XXX] sandbox_recvrpc");
+    exit(-1);
+  }
+
+  /* Demangle data */
+  if (len != sizeof(struct symlink_rep)) {
+    DPRINTF("Received len mismatch");
+    exit(-1);
+  }
+  memmove(&srep, buffer, len);
+  free(buffer);
+  
+  DPRINTF("[SANDBOX] received return value: %d", srep.ret);
+  return srep.ret;
+}
+
+int
+unlink_wrapper(const char *path)
+{
+  struct unlink_req ureq;
+  struct unlink_rep urep;
+  uint32_t seqno = 0;
+  struct iovec iov_req, iov_rep;
+  uint32_t opno;
+  u_char *buffer;
+  size_t len;
+
+  bzero(&ureq, sizeof(struct unlink_req));
+  bzero(&urep, sizeof(struct unlink_rep));
+
+  strlcpy(ureq.path, path, MMIN(strlen(path)+1, 256));
+
+  iov_req.iov_base = &ureq;
+  iov_req.iov_len = sizeof(ureq);
+
+  DPRINTF("[SANDBOX] Proxying unlink() call to parent");
+
+  if (sandbox_sendrpc(fscb, SANDBOX_REQ_UNLINK, seqno, &iov_req, 1) < 0)
+    err(-1, "sandbox_sendrpc");
+
+  if (sandbox_recvrpc(fscb, &opno, &seqno, &buffer, &len) < 0) {
+    if (errno == EPIPE)
+      DPRINTF("[XXX] EPIPE");
+    else
+      DPRINTF("[XXX] sandbox_recvrpc");
+    exit(-1);
+  }
+
+  /* Demangle data */
+  if (len != sizeof(struct unlink_rep)) {
+    DPRINTF("Received len mismatch");
+    exit(-1);
+  }
+  memmove(&urep, buffer, len);
+  free(buffer);
+  
+  DPRINTF("[SANDBOX] received return value: %d", urep.ret);
+  return urep.ret;
 }

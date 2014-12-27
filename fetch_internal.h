@@ -106,5 +106,7 @@ int stat_wrapper(const char *path, struct stat *s, uint32_t op);
 int utimes_wrapper(const char *filename, const struct timeval times[2]);
 int mkstemps_wrapper(char *template, int suffixlen);
 int rename_wrapper(const char *old, const char *new);
+int symlink_wrapper(const char *target, const char *linkpath);
+int unlink_wrapper(const char *path);
 
 #endif	/* _FETCH_INTERNAL_H_ */

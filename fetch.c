@@ -450,7 +450,7 @@ fetch(char *URL, const char *path)
 
 	/* symlink instead of copy */
 	if (l_flag && strcmp(url->scheme, "file") == 0 && !o_stdout) {
-		if (symlink(url->doc, path) == -1) {
+		if (symlink_wrapper(url->doc, path) == -1) {
 			warn("%s: symlink()", path);
 			goto failure;
 		}
@@ -570,8 +570,8 @@ fetch(char *URL, const char *path)
 					goto failure;
 				}
 				of = fopen_wrapper(tmppath, "w");
-				chown(tmppath, sb.st_uid, sb.st_gid);
-				chmod(tmppath, sb.st_mode & ALLPERMS);
+				fchown(fileno(of), sb.st_uid, sb.st_gid);
+				fchmod(fileno(of), sb.st_mode & ALLPERMS);
 			}
 		}
 		if (of == NULL)
@@ -695,7 +695,7 @@ fetch(char *URL, const char *path)
  failure:
 	if (of && of != stdout && !R_flag && !r_flag)
 		if (fstat(fileno(of), &sb) != -1 && (sb.st_mode & S_IFREG))
-			unlink(tmppath ? tmppath : path);
+			unlink_wrapper(tmppath ? tmppath : path);
 	if (R_flag && tmppath != NULL && sb.st_size == -1)
 		rename_wrapper(tmppath, path); /* ignore errors here */
  failure_keep:
