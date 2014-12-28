@@ -28,16 +28,18 @@ LDADD=		-lfetch -lssl -lcrypto
 DPADD=		${LIBFETCH} ${LIBMD}
 LDADD=		-lfetch -lmd
 .endif
+LIBFETCH_DIR?=  ../libfetch_c
+LIBSEP_DIR?=  ../libsep
 .ifndef NO_SANDBOX
-CFLAGS+=	-I ../libsep -I ../libfetch_c
+CFLAGS+=	-I ${LIBSEP_DIR} -I ${LIBFETCH_DIR}
 .ifdef SANDBOX_PARSE_URL
 CFLAGS+=	-DSANDBOX_PARSE_URL
 .endif
 .ifdef SANDBOX_FETCH
 CFLAGS+=  -DSANDBOX_FETCH
 .endif
-DPADD+=		${LIBSEP}
-LDADD+=		-L../libsep/ -lsep
+DPADD+=		${LIBSEP_DIR}
+LDADD+=		-L${LIBSEP_DIR} -lsep
 .else
 CFLAGS+=	-DNO_SANDBOX
 .endif
