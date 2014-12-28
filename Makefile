@@ -11,10 +11,11 @@ LDADD=		-lfetch -lssl -lcrypto
 DPADD=		${LIBFETCH} ${LIBMD}
 LDADD=		-lfetch -lmd
 .endif
+LIBFETCH_DIR?= ../libfetch_c
+LIBSEP_DIR?= ../libsep
 .ifdef WITH_SOAAP
-LIBFETCH_DIR?=	../libfetch_c
 CC=      ${LLVM_BUILD_DIR}/bin/clang
-CFLAGS+=  -I${SOAAP_SOURCE_DIR}/include -I${LIBFETCH_DIR}
+CFLAGS+=  -I${SOAAP_SOURCE_DIR}/include -I${LIBFETCH_DIR} -I${LIBSEP_DIR}
 
 ${PROG}-libfetch.bc-a: ${PROG}.bc-a
 	${LLVM_BUILD_DIR}/bin/llvm-link -o ${.TARGET} ${.ALLSRC} ${LIBFETCH_DIR}/libfetch.bc-a
