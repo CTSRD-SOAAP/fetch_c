@@ -869,9 +869,8 @@ fetchParseURL_wrapper(char *URL)
 FILE *
 fopen_wrapper(const char *path, const char *mode)
 {
-    DPRINTF("In fopen_wrapper");
-
 #ifdef SANDBOX_FETCH
+  DPRINTF("In fopen_wrapper");
 	struct outf_req ofreq;
 	struct outf_rep ofrep;
 	uint32_t seqno = 0;
@@ -928,7 +927,6 @@ fopen_wrapper(const char *path, const char *mode)
 #else
     return fopen(path, mode);
 #endif
-
 }
 
 int
@@ -946,6 +944,7 @@ stat_restart_wrapper(const char *path, struct stat *s)
 int
 stat_wrapper(const char *path, struct stat *s, uint32_t op)
 {
+#ifdef SANDBOX_FETCH
   struct stat_req streq;
   struct stat_rep strep;
   uint32_t seqno = 0;
@@ -989,6 +988,9 @@ stat_wrapper(const char *path, struct stat *s, uint32_t op)
   
   DPRINTF("[SANDBOX] received struct, return value was: %d", strep.ret);
   return strep.ret;
+#else
+  return stat(path, s);
+#endif
 }
 
 int utimes_wrapper(const char *filename, const struct timeval times[2]) {
@@ -1042,10 +1044,9 @@ int utimes_wrapper(const char *filename, const struct timeval times[2]) {
 int
 mkstemps_wrapper(char *template, int suffixlen)
 {
-    DPRINTF("In mkstemps_wrapper");
-    DPRINTF("[SANDBOX] template: %s", template);
-
 #ifdef SANDBOX_FETCH
+  DPRINTF("In mkstemps_wrapper");
+  DPRINTF("[SANDBOX] template: %s", template);
 	struct mkstemps_req mkreq;
 	struct mkstemps_rep mkrep;
 	uint32_t seqno = 0;
@@ -1104,6 +1105,7 @@ mkstemps_wrapper(char *template, int suffixlen)
 int
 rename_wrapper(const char *old, const char *new)
 {
+#ifdef SANDBOX_FETCH
   struct rename_req rnreq;
   struct rename_rep rnrep;
   uint32_t seqno = 0;
@@ -1144,11 +1146,15 @@ rename_wrapper(const char *old, const char *new)
   
   DPRINTF("[SANDBOX] received return value: %d", rnrep.ret);
   return rnrep.ret;
+#else
+  return rename(old, new);
+#endif
 }
 
 int
 symlink_wrapper(const char *target, const char *linkpath)
 {
+#ifdef SANDBOX_FETCH
   struct symlink_req sreq;
   struct symlink_rep srep;
   uint32_t seqno = 0;
@@ -1189,11 +1195,15 @@ symlink_wrapper(const char *target, const char *linkpath)
   
   DPRINTF("[SANDBOX] received return value: %d", srep.ret);
   return srep.ret;
+#else
+  return symlink(target, linkpath);
+#endif
 }
 
 int
 unlink_wrapper(const char *path)
 {
+#ifdef SANDBOX_FETCH
   struct unlink_req ureq;
   struct unlink_rep urep;
   uint32_t seqno = 0;
@@ -1233,4 +1243,7 @@ unlink_wrapper(const char *path)
   
   DPRINTF("[SANDBOX] received return value: %d", urep.ret);
   return urep.ret;
+#else
+  return unlink(path);
+#endif
 }
