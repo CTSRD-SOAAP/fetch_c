@@ -736,7 +736,7 @@ main(int argc, char *argv[])
 	char *end, *q;
 	int c, e, r;
 
-#ifndef NO_SANDBOX
+#if !defined(NO_SANDBOX) && !defined(SANDBOX_EPHEMERAL)
 	/*
 	 * Initiate sandbox.
 	 */
@@ -978,10 +978,6 @@ main(int argc, char *argv[])
 			e = fetch_wrapper(*argv, p);
 		}
 
-#ifndef NO_SANDBOX
-		fetch_sandbox_wait();
-#endif
-
 		if (sigint)
 			kill(getpid(), SIGINT);
 
@@ -1006,8 +1002,16 @@ main(int argc, char *argv[])
 			}
 		}
 
+#ifdef SANDBOX_EPHEMERAL
+    fetch_sandbox_wait();
+#endif
+
 		argc--, argv++;
 	}
+
+#if !defined(NO_SANDBOX) && !defined(SANDBOX_EPHEMERAL)
+  fetch_sandbox_wait();
+#endif
 
 	exit(r);
 }

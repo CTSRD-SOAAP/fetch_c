@@ -51,8 +51,8 @@
 #ifndef NDEBUG
 #ifdef DEBUG
 #define DPRINTF(format, ...)				\
-	fprintf(stderr, "%s [%d] " format "\n", 	\
-	__FUNCTION__, __LINE__, ##__VA_ARGS__)
+	fprintf(stderr, "[%s-%d] (%s:%d) " format "\n", 	\
+	(fscb == NULL || fscb->sandbox_pid == 0) ? "SANDBOX" : "HOST", getpid(), __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #endif
 #else
 #define DPRINTF(...)
@@ -74,6 +74,7 @@
 #define HOST_REP_RENAME 9
 #define HOST_REP_SYMLINK 10
 #define HOST_REP_UNLINK 11
+#define TERMINATE_SANDBOX 12
 
 #define SANDBOX_FINISHED 100
 #define SANDBOX_REQ_FETCHCONN 101
@@ -160,6 +161,7 @@ struct stat_req {
 struct stat_rep {
 	int ret;
   struct stat s;
+  int stat_errno;
 } __packed;
 
 struct utimes_req {
@@ -211,7 +213,7 @@ static void fsandbox(void);
 void
 fetch_sandbox_init(void)
 {
-
+  DPRINTF("Creating sandbox");
 	fscb = calloc(1, sizeof(struct sandbox_cb));
 	if(!fscb) {
 		DPRINTF("[XXX] fscb wasn't initialized!");
@@ -224,6 +226,10 @@ fetch_sandbox_init(void)
 void
 fetch_sandbox_wait(void)
 {
+  DPRINTF("Sending TERMINATE_SANDBOX message");
+  uint32_t seqno;
+	if (host_sendrpc(fscb, TERMINATE_SANDBOX, seqno, NULL, 0, NULL, 0) < 0)
+		err(-1, "host_sendrpc");
 	wait(&rv);
 	DPRINTF("Sandbox's exit status is %d", WEXITSTATUS(rv));
 }       
@@ -274,6 +280,8 @@ fetch_insandbox(char *origurl, const char *origpath)
 	if (len != sizeof(rep))
 		errx(-1, "host_rpc");
 #endif
+  
+  DPRINTF("Proxying fetch() call to sandbox");
 
 	if (host_sendrpc(fscb, PROXIED_FETCH, seqno, &iov_req, 1, NULL, 0) < 0)
 		err(-1, "host_sendrpc");
@@ -312,7 +320,7 @@ fetch_insandbox(char *origurl, const char *origpath)
 
 		switch(opno) {
       case SANDBOX_REQ_FETCHCONN: {
-        DPRINTF("[HOST] SANDBOX_REQ_FETCHCONN");
+        DPRINTF("SANDBOX_REQ_FETCHCONN");
         if(len != sizeof(struct fetchconn_req)) {
           DPRINTF("Ouch receive size mismatch!");
           exit(-1);
@@ -364,7 +372,7 @@ fetch_insandbox(char *origurl, const char *origpath)
 			  break;
       }
       case SANDBOX_REQ_OUTF: {
-        DPRINTF("[HOST] SANDBOX_REQ_OUTF");
+        DPRINTF("SANDBOX_REQ_OUTF");
         if(len != sizeof(struct outf_req)) {
           DPRINTF("Ouch receive size mismatch!");
           exit(-1);
@@ -387,7 +395,7 @@ fetch_insandbox(char *origurl, const char *origpath)
         if (host_rpc_rights(fscb, HOST_REP_OUTF, &iov_req, 1,
           &ofd, 1, NULL, 0, NULL, NULL, NULL) < 0)
           err(-1, "host_rpc");
-        DPRINTF("[HOST] Output file descriptor sent");
+        DPRINTF("Output file descriptor sent");
 #if 0
         if (host_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
           if (errno == EPIPE) {
@@ -404,13 +412,13 @@ fetch_insandbox(char *origurl, const char *origpath)
         }
         memmove(&rep, buffer, len);
         free(buffer);
-        DPRINTF("[HOST] Got the final response");
+        DPRINTF("Got the final response");
         goto out;
 #endif
         break;
       }
       case SANDBOX_REQ_STAT_IMS: {
-        DPRINTF("[HOST] SANDBOX_REQ_STAT_IMS");
+        DPRINTF("SANDBOX_REQ_STAT_IMS");
         if(len != sizeof(struct stat_req)) {
           DPRINTF("Ouch receive size mismatch!");
           exit(-1);
@@ -420,6 +428,7 @@ fetch_insandbox(char *origurl, const char *origpath)
 
         /* Send back to the sandbox what is needed */
         strep.ret = stat(streq.fpath, &s);
+        strep.stat_errno = errno;
         memmove(&strep.s, &s, sizeof(struct stat));
         bzero(&s, sizeof(struct stat));
 
@@ -431,7 +440,7 @@ fetch_insandbox(char *origurl, const char *origpath)
         break;
       }
       case SANDBOX_REQ_STAT_RESTART: {
-        DPRINTF("[HOST] SANDBOX_REQ_STAT_RESTART");
+        DPRINTF("SANDBOX_REQ_STAT_RESTART");
         if(len != sizeof(struct stat_req)) {
           DPRINTF("Ouch receive size mismatch!");
           exit(-1);
@@ -442,6 +451,7 @@ fetch_insandbox(char *origurl, const char *origpath)
         /* Send back to the sandbox what is needed */
         DPRINTF("stat(\"%s\")", streq.fpath);
         strep.ret = stat(streq.fpath, &s);
+        strep.stat_errno = errno;
         DPRINTF("stat returned %d", strep.ret);
         memmove(&strep.s, &s, sizeof(struct stat));
         bzero(&s, sizeof(struct stat));
@@ -449,12 +459,15 @@ fetch_insandbox(char *origurl, const char *origpath)
         iov_req.iov_base = &strep;
         iov_req.iov_len = sizeof(strep);
 
+        DPRINTF("Size of strep msg: %lu", sizeof(strep));
+        DPRINTF("Size of struct stat_rep: %lu", sizeof(struct stat_rep));
+
         if (host_rpc(fscb, HOST_REP_STAT_RESTART, &iov_req, 1, NULL, 0, NULL) < 0)
           err(-1, "host_rpc");
         break;
       }
       case SANDBOX_REQ_UTIMES: {
-        DPRINTF("[HOST] SANDBOX_REQ_UTIMES");
+        DPRINTF("SANDBOX_REQ_UTIMES");
         if(len != sizeof(struct utimes_req)) {
           DPRINTF("Ouch receive size mismatch!");
           exit(-1);
@@ -464,7 +477,7 @@ fetch_insandbox(char *origurl, const char *origpath)
 
         /* Send back to the sandbox what is needed */
         DPRINTF("utimes(\"%s\")", ureq.fname);
-        DPRINTF("sizeof(ureq.times): %d", sizeof(ureq.times));
+        DPRINTF("sizeof(ureq.times): %lu", sizeof(ureq.times));
         urep.ret = utimes(ureq.fname, ureq.times);
         DPRINTF("utimes returned %d", urep.ret);
 
@@ -476,18 +489,18 @@ fetch_insandbox(char *origurl, const char *origpath)
         break;
       }
       case SANDBOX_REQ_MKSTEMPS: {
-        DPRINTF("[HOST] SANDBOX_REQ_MKSTEMPS");
+        DPRINTF("SANDBOX_REQ_MKSTEMPS");
         if(len != sizeof(struct mkstemps_req)) {
           DPRINTF("Ouch receive size mismatch!");
           exit(-1);
         }
         memmove(&mkreq, buffer, len);
         free(buffer);
-        DPRINTF("[HOST] mkreq.template before call: %s", mkreq.template);
+        DPRINTF("mkreq.template before call: %s", mkreq.template);
         mkrep.ret = mkstemps(mkreq.template, mkreq.suffixlen);
         strlcpy(mkrep.template, mkreq.template, strlen(mkreq.template)+1);
 
-        DPRINTF("[HOST] mkreq.template after call: %s", mkreq.template);
+        DPRINTF("mkreq.template after call: %s", mkreq.template);
 
         /* Send back to the sandbox what is needed */
         iov_req.iov_base = &mkrep;
@@ -496,11 +509,11 @@ fetch_insandbox(char *origurl, const char *origpath)
         if (host_rpc_rights(fscb, HOST_REP_MKSTEMPS, &iov_req, 1,
           &mkrep.ret, 1, NULL, 0, NULL, NULL, NULL) < 0)
           err(-1, "host_rpc");
-        DPRINTF("[HOST] file descriptor sent");
+        DPRINTF("file descriptor sent");
         break;
       }
       case SANDBOX_REQ_RENAME: {
-        DPRINTF("[HOST] SANDBOX_REQ_RENAME");
+        DPRINTF("SANDBOX_REQ_RENAME");
         if(len != sizeof(struct rename_req)) {
           DPRINTF("Ouch receive size mismatch!");
           exit(-1);
@@ -521,7 +534,7 @@ fetch_insandbox(char *origurl, const char *origpath)
         break;
       }
       case SANDBOX_REQ_SYMLINK: {
-        DPRINTF("[HOST] SANDBOX_REQ_SYMLINK");
+        DPRINTF("SANDBOX_REQ_SYMLINK");
         if(len != sizeof(struct symlink_req)) {
           DPRINTF("Ouch receive size mismatch!");
           exit(-1);
@@ -542,7 +555,7 @@ fetch_insandbox(char *origurl, const char *origpath)
         break;
       }
       case SANDBOX_REQ_UNLINK: {
-        DPRINTF("[HOST] SANDBOX_REQ_UNLINK");
+        DPRINTF("SANDBOX_REQ_UNLINK");
         if(len != sizeof(struct unlink_req)) {
           DPRINTF("Ouch receive size mismatch!");
           exit(-1);
@@ -563,7 +576,7 @@ fetch_insandbox(char *origurl, const char *origpath)
         break;
       }
       case SANDBOX_FINISHED: {
-        DPRINTF("[HOST] SANDBOX_FINISHED");
+        DPRINTF("SANDBOX_FINISHED");
         if(len != sizeof(rep)) {
           DPRINTF("Ouch receive size mismatch!");
           exit(-1);
@@ -625,8 +638,9 @@ sandbox_fetch(struct sandbox_cb *scb, uint32_t opno, uint32_t seqno, char
 	bzero(&rep, sizeof(rep));
 	iov.iov_base = &rep;
 	iov.iov_len = sizeof(rep);
-  DPRINTF("[SANDBOX] Sending retval");
+  DPRINTF("Sending retval %ld", rep.hf_rep_retval);
 	//if (sandbox_sendrpc(scb, opno, seqno, &iov, 1) < 0)
+  DPRINTF("SANDBOX_FINISHED");
   if (sandbox_sendrpc(scb, SANDBOX_FINISHED, seqno, &iov, 1) < 0)
 		err(-1, "sandbox_sendrpc");
 
@@ -661,7 +675,7 @@ fetch_connect_inparent(const char *host, int port, int af, int verbose)
   iov_req.iov_base = &fcreq;
   iov_req.iov_len = sizeof(fcreq);
 
-  DPRINTF("[SANDBOX] Proxying fetch_connect call to parent");
+  DPRINTF("Proxying fetch_connect call to parent");
 
   if (sandbox_sendrpc(fscb, SANDBOX_REQ_FETCHCONN, seqno, &iov_req, 1) < 0)
     err(-1, "sandbox_sendrpc");
@@ -695,7 +709,7 @@ fetch_connect_inparent(const char *host, int port, int af, int verbose)
   conn->sd = dup(fdarray[0]);
   conn->ref = fcrep.ref;
 
-  DPRINTF("[SANDBOX] OK, we have the conn");
+  DPRINTF("OK, we have the conn");
   return conn;
 }
 
@@ -762,37 +776,47 @@ fsandbox(void)
 
 	DPRINTF("===> In fetch_sandbox()");
 
-	/* Get the output fd and URL from parent */
-	if (sandbox_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
-		if (errno == EPIPE) {
-			DPRINTF("[XXX] EPIPE");
-			exit(-1);
-		}
-		else {
-			DPRINTF("[XXX] sandbox_recvrpc");
-			err(-1, "sandbox_recvrpc");
-		}
-	}
 
-  DPRINTF("Request received");
+  for (;;) {
 
-	switch(opno) {
+    /* Get the output fd and URL from parent */
+    if (sandbox_recvrpc(fscb, &opno, &seqno,  &buffer, &len) < 0) {
+      if (errno == EPIPE) {
+        DPRINTF("[XXX] EPIPE");
+        exit(-1);
+      }
+      else {
+        DPRINTF("[XXX] sandbox_recvrpc");
+        err(-1, "sandbox_recvrpc");
+      }
+    }
+
+    DPRINTF("Request received");
+    
+    switch(opno) {
 #ifdef SANDBOX_FETCH
-	case PROXIED_FETCH:
-		/* fetch the url and return */
-		sandbox_fetch(fscb, opno, seqno, (char *)buffer, len);
-		break;
+    case PROXIED_FETCH:
+      /* fetch the url and return */
+      DPRINTF("PROXIED_FETCH");
+      sandbox_fetch(fscb, opno, seqno, (char *)buffer, len);
+      break;
 #endif
 #ifdef SANDBOX_PARSE_URL
-	case PROXIED_FETCH_PARSE_URL:
-		sandbox_fetchParseURL(fscb, opno, seqno, (char *)buffer, len);
-		break;
+    case PROXIED_FETCH_PARSE_URL:
+      DPRINTF("PROXIED_FETCH_PARSE_URL");
+      sandbox_fetchParseURL(fscb, opno, seqno, (char *)buffer, len);
+      break;
 #endif    
-	/* For future expansion */
-	default:
-		errx(-1, "sandbox_main: unknown op %d", opno);
-	}
+    case TERMINATE_SANDBOX:
+      DPRINTF("TERMINATE_SANDBOX");
+      goto out;
+    /* For future expansion */
+    default:
+      errx(-1, "sandbox_main: unknown op %d", opno);
+    }
+  }
 
+out:
 	/* Free buffer */
 	free(buffer);
 
@@ -807,6 +831,9 @@ fetch_wrapper(char *URL, const char *path)
 {
 	/* Currently haven't tested using both sandboxes at once */
 #ifdef SANDBOX_FETCH  
+#ifdef SANDBOX_EPHEMERAL
+  fetch_sandbox_init();
+#endif
 	return (fetch_insandbox(URL, path));
 #else
 	return (fetch(URL, path));
@@ -825,6 +852,9 @@ fetchParseURL_wrapper(char *URL)
 		return NULL;
 	}
 #else
+#ifdef SANDBOX_EPHEMERAL
+  fetch_sandbox_init();
+#endif
   DPRINTF("Proxying to sandbox");
 	size_t len;
 	struct fetch_parse_url_req req;
@@ -920,7 +950,7 @@ fopen_wrapper(const char *path, const char *mode)
 		return NULL;
 	}
 
-	DPRINTF("[SANDBOX] Got the file descriptor from parent");
+	DPRINTF("Got the file descriptor from parent");
 
 	/* Okay lets get a stream out of the fd */
 	return(fdopen(fdarray[0], mode));
@@ -932,12 +962,14 @@ fopen_wrapper(const char *path, const char *mode)
 int
 stat_ims_wrapper(const char *path, struct stat *s)
 {
+  DPRINTF("stat_ims_wrapper");
   return stat_wrapper(path, s, SANDBOX_REQ_STAT_IMS);
 }
 
 int
 stat_restart_wrapper(const char *path, struct stat *s)
 {
+  DPRINTF("stat_restart_wrapper");
   return stat_wrapper(path, s, SANDBOX_REQ_STAT_RESTART);
 }
 
@@ -951,7 +983,7 @@ stat_wrapper(const char *path, struct stat *s, uint32_t op)
   struct iovec iov_req, iov_rep;
   uint32_t opno;
   u_char *buffer;
-  size_t len;
+  size_t len = 0;
 
   bzero(&streq, sizeof(struct stat_req));
   bzero(&strep, sizeof(struct stat_rep));
@@ -963,7 +995,7 @@ stat_wrapper(const char *path, struct stat *s, uint32_t op)
   iov_req.iov_base = &streq;
   iov_req.iov_len = sizeof(streq);
 
-  DPRINTF("[SANDBOX] Proxying stat() call to parent");
+  DPRINTF("Proxying stat() (%d) call to parent", op);
 
   if (sandbox_sendrpc(fscb, op, seqno, &iov_req, 1) < 0)
     err(-1, "sandbox_sendrpc");
@@ -977,6 +1009,7 @@ stat_wrapper(const char *path, struct stat *s, uint32_t op)
   }
 
   /* Demangle data */
+  DPRINTF("Received opno: %d, len: %zu, size of stat_rep: %lu", opno, len, sizeof(struct stat_rep));
   if (len != sizeof(struct stat_rep)) {
     DPRINTF("Received len mismatch");
     exit(-1);
@@ -986,7 +1019,8 @@ stat_wrapper(const char *path, struct stat *s, uint32_t op)
 
   memmove(s, &strep.s, sizeof(struct stat));
   
-  DPRINTF("[SANDBOX] received struct, return value was: %d", strep.ret);
+  DPRINTF("received struct, return value: %d, errno value: %d", strep.ret, strep.stat_errno);
+  errno = strep.stat_errno;
   return strep.ret;
 #else
   return stat(path, s);
@@ -1007,13 +1041,13 @@ int utimes_wrapper(const char *filename, const struct timeval times[2]) {
   bzero(&urep, sizeof(struct utimes_rep));
 
   strlcpy(ureq.fname, filename, MMIN(strlen(filename)+1, 256));
-  DPRINTF("sizeof(ureq.times): %d", sizeof(ureq.times));
+  DPRINTF("sizeof(ureq.times): %lu", sizeof(ureq.times));
   memmove(ureq.times, times, sizeof(ureq.times));
 
   iov_req.iov_base = &ureq;
   iov_req.iov_len = sizeof(ureq);
 
-  DPRINTF("[SANDBOX] Proxying utimes() call to parent");
+  DPRINTF("Proxying utimes() call to parent");
 
   if (sandbox_sendrpc(fscb, SANDBOX_REQ_UTIMES, seqno, &iov_req, 1) < 0)
     err(-1, "sandbox_sendrpc");
@@ -1034,7 +1068,7 @@ int utimes_wrapper(const char *filename, const struct timeval times[2]) {
   memmove(&urep, buffer, len);
   free(buffer);
 
-  DPRINTF("[SANDBOX] received utimes reply, return value was: %d", urep.ret);
+  DPRINTF("received utimes reply, return value was: %d", urep.ret);
   return urep.ret;
 #else
   return utimes(filename, times);
@@ -1046,7 +1080,7 @@ mkstemps_wrapper(char *template, int suffixlen)
 {
 #ifdef SANDBOX_FETCH
   DPRINTF("In mkstemps_wrapper");
-  DPRINTF("[SANDBOX] template: %s", template);
+  DPRINTF("template: %s", template);
 	struct mkstemps_req mkreq;
 	struct mkstemps_rep mkrep;
 	uint32_t seqno = 0;
@@ -1093,9 +1127,9 @@ mkstemps_wrapper(char *template, int suffixlen)
 	free(buffer);
 
   strlcpy(template, mkrep.template, MMIN(strlen(template) + 1, 256));
-	DPRINTF("[SANDBOX] Got the file descriptor from parent");
-  DPRINTF("[SANDBOX] ret: %d, fd: %d", mkrep.ret, fdp[0]);
-  DPRINTF("[SANDBOX] template: %s", template);
+	DPRINTF("Got the file descriptor from parent");
+  DPRINTF("ret: %d, fd: %d", mkrep.ret, fdp[0]);
+  DPRINTF("template: %s", template);
 	return (mkrep.ret == -1) ? -1 : fdp[0];
 #else
     return mkstemps(template, suffixlen);
@@ -1123,7 +1157,7 @@ rename_wrapper(const char *old, const char *new)
   iov_req.iov_base = &rnreq;
   iov_req.iov_len = sizeof(rnreq);
 
-  DPRINTF("[SANDBOX] Proxying rename() call to parent");
+  DPRINTF("Proxying rename() call to parent");
 
   if (sandbox_sendrpc(fscb, SANDBOX_REQ_RENAME, seqno, &iov_req, 1) < 0)
     err(-1, "sandbox_sendrpc");
@@ -1144,7 +1178,7 @@ rename_wrapper(const char *old, const char *new)
   memmove(&rnrep, buffer, len);
   free(buffer);
   
-  DPRINTF("[SANDBOX] received return value: %d", rnrep.ret);
+  DPRINTF("received return value: %d", rnrep.ret);
   return rnrep.ret;
 #else
   return rename(old, new);
@@ -1172,7 +1206,7 @@ symlink_wrapper(const char *target, const char *linkpath)
   iov_req.iov_base = &sreq;
   iov_req.iov_len = sizeof(sreq);
 
-  DPRINTF("[SANDBOX] Proxying symlink() call to parent");
+  DPRINTF("Proxying symlink() call to parent");
 
   if (sandbox_sendrpc(fscb, SANDBOX_REQ_SYMLINK, seqno, &iov_req, 1) < 0)
     err(-1, "sandbox_sendrpc");
@@ -1193,7 +1227,7 @@ symlink_wrapper(const char *target, const char *linkpath)
   memmove(&srep, buffer, len);
   free(buffer);
   
-  DPRINTF("[SANDBOX] received return value: %d", srep.ret);
+  DPRINTF("received return value: %d", srep.ret);
   return srep.ret;
 #else
   return symlink(target, linkpath);
@@ -1220,7 +1254,7 @@ unlink_wrapper(const char *path)
   iov_req.iov_base = &ureq;
   iov_req.iov_len = sizeof(ureq);
 
-  DPRINTF("[SANDBOX] Proxying unlink() call to parent");
+  DPRINTF("Proxying unlink() call to parent");
 
   if (sandbox_sendrpc(fscb, SANDBOX_REQ_UNLINK, seqno, &iov_req, 1) < 0)
     err(-1, "sandbox_sendrpc");
@@ -1241,7 +1275,7 @@ unlink_wrapper(const char *path)
   memmove(&urep, buffer, len);
   free(buffer);
   
-  DPRINTF("[SANDBOX] received return value: %d", urep.ret);
+  DPRINTF("received return value: %d", urep.ret);
   return urep.ret;
 #else
   return unlink(path);

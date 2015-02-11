@@ -13,7 +13,9 @@ CFLAGS+=  -DNDEBUG
 .endif
 
 # error checking
-.if defined(NO_SANDBOX) && (defined(SANDBOX_FETCH) || defined(SANDBOX_PARSE_URL))
+.if defined(NO_SANDBOX) && (defined(SANDBOX_FETCH)
+                            || defined(SANDBOX_PARSE_URL)
+                            || defined(SANDBOX_EPHEMERAL))
 .error Sandboxing options should not be specified if NO_SANDBOX is present
 .endif
 
@@ -37,6 +39,9 @@ CFLAGS+=	-DSANDBOX_PARSE_URL
 .endif
 .ifdef SANDBOX_FETCH
 CFLAGS+=  -DSANDBOX_FETCH
+.endif
+.ifdef SANDBOX_EPHEMERAL
+CFLAGS+=  -DSANDBOX_EPHEMERAL
 .endif
 DPADD+=		${LIBSEP_DIR}
 LDADD+=		-L${LIBSEP_DIR} -lsep
