@@ -54,7 +54,9 @@ __FBSDID("$FreeBSD: stable/9/usr.bin/fetch/fetch.c 244499 2012-12-20 18:13:04Z e
 #define MINBUFSIZE	4096
 #define TIMEOUT		120
 
+#ifdef SANDBOX_FETCH
 __soaap_callgates(net, fetch_connect, stat, fopen)
+#endif
 
 /* Option flags */
 int	 A_flag;	/*    -A: do not follow 302 redirects */
@@ -315,7 +317,13 @@ query_auth(struct url *URL)
 /*
  * Fetch a file
  */
-__soaap_sandbox_persistent("net")
+#ifdef SANDBOX_FETCH
+#ifdef SANDBOX_EPHEMERAL
+__soaap_sandbox_ephemeral("fetch")
+#else 
+__soaap_sandbox_persistent("fetch")
+#endif
+#endif
 static int
 fetch(char *URL, const char *path)
 {
@@ -781,6 +789,18 @@ main(int argc, char *argv[])
 	const char *p, *s;
 	char *end, *q;
 	int c, e, r;
+
+#ifdef SANDBOX_PARSE_URL
+#ifndef SANDBOX_EPHEMERAL
+  __soaap_create_persistent_sandbox("parser");
+#endif
+#endif
+
+#ifdef SANDBOX_FETCH
+#ifndef SANDBOX_EPHEMERAL
+  __soaap_create_persistent_sandbox("net");
+#endif
+#endif
 
 	while ((c = getopt(argc, argv,
 	    "146AaB:bc:dFf:Hh:i:lMmN:nPpo:qRrS:sT:tUvw:")) != -1)
