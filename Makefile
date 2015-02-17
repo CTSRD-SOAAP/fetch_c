@@ -15,7 +15,16 @@ LIBFETCH_DIR?= ../libfetch_c
 LIBSEP_DIR?= ../libsep
 .ifdef WITH_SOAAP
 CC=      ${LLVM_BUILD_DIR}/bin/clang
-CFLAGS+=  -I${SOAAP_SOURCE_DIR}/include -I${LIBFETCH_DIR} -I${LIBSEP_DIR}
+CFLAGS+=  -DWITH_SOAAP -I${SOAAP_SOURCE_DIR}/include -I${LIBFETCH_DIR} -I${LIBSEP_DIR}
+.ifdef SANDBOX_FETCH
+CFLAGS+=  -DSANDBOX_FETCH
+.endif
+.ifdef SANDBOX_PARSE_URL
+CFLAGS+=  -DSANDBOX_PARSE_URL
+.endif
+.ifdef SANDBOX_EPHEMERAL
+CFLAGS+=  -DSANDBOX_EPHEMERAL
+.endif
 
 ${PROG}-libfetch.bc-a: ${PROG}.bc-a
 	${LLVM_BUILD_DIR}/bin/llvm-link -o ${.TARGET} ${.ALLSRC} ${LIBFETCH_DIR}/libfetch.bc-a

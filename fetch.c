@@ -319,9 +319,9 @@ query_auth(struct url *URL)
  */
 #ifdef SANDBOX_FETCH
 #ifdef SANDBOX_EPHEMERAL
-__soaap_sandbox_ephemeral("fetch")
+__soaap_sandbox_ephemeral("net")
 #else 
-__soaap_sandbox_persistent("fetch")
+__soaap_sandbox_persistent("net")
 #endif
 #endif
 static int
