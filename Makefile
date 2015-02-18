@@ -50,3 +50,17 @@ CFLAGS+=	-DNO_SANDBOX
 .endif
 
 .include <bsd.prog.mk>
+
+sandbox_fetch:
+.ifdef DEBUG
+	make -DSANDBOX_FETCH -DDEBUG
+.else
+	make -DSANDBOX_FETCH
+.endif
+
+sandbox_parse:
+.ifdef DEBUG
+	make -DSANDBOX_PARSE_URL -DDEBUG
+.else
+	make -DSANDBOX_PARSE_URL
+.endif
