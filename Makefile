@@ -31,3 +31,11 @@ ${PROG}-libfetch.bc-a: ${PROG}.bc-a
 .endif
 
 .include <bsd.prog.mk>
+
+soaap_fetch:
+	make -DWITH_LLVM_INSTRUMENTED -DWITH_SOAAP -DSANDBOX_FETCH fetch-libfetch.soaap_perf
+	mv fetch-libfetch.soaap_perf fetch
+
+soaap_parse:
+	make -DWITH_LLVM_INSTRUMENTED -DWITH_SOAAP -DSANDBOX_PARSE_URL fetch-libfetch.soaap_perf
+	mv fetch-libfetch.soaap_perf fetch

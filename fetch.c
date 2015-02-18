@@ -37,6 +37,7 @@ __FBSDID("$FreeBSD: stable/9/usr.bin/fetch/fetch.c 244499 2012-12-20 18:13:04Z e
 #include <ctype.h>
 #include <err.h>
 #include <errno.h>
+#include <netdb.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
