@@ -47,6 +47,7 @@ __FBSDID("$FreeBSD: stable/9/usr.bin/fetch/fetch.c 244499 2012-12-20 18:13:04Z e
 
 #include <fetch.h>
 #include "fetch_internal.h"
+#include <debug.h>
 
 int	 v_level = 1;	/*    -v: verbosity level */
 int	 family = PF_UNSPEC;	/* -[46]: address family to use */
@@ -308,6 +309,7 @@ fetch(char *URL, const char *path)
 		goto failure;
 	}
 
+
 	/* if no scheme was specified, take a guess */
 	if (!*url->scheme) {
 		if (!*url->host)
@@ -317,6 +319,11 @@ fetch(char *URL, const char *path)
 		else if (strncasecmp(url->host, "www.", 4) == 0)
 			strcpy(url->scheme, SCHEME_HTTP);
 	}
+
+#ifdef SANDBOX_FETCH
+  url->conn_fn = fetch_connect_inparent;
+  url->getserv_fn = getservbyname_inparent;
+#endif
 
 	/* common flags */
 	switch (family) {
@@ -415,9 +422,6 @@ fetch(char *URL, const char *path)
 	/* start the transfer */
 	if (timeout)
 		alarm(timeout);
-#ifdef SANDBOX_FETCH
-  url->conn_fn = fetch_connect_inparent;
-#endif
 	f = fetchXGet(url, &us, flags);
 	if (timeout)
 		alarm(0);

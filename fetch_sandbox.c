@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <err.h>
+#include <netdb.h>
 
 #ifndef NO_SANDBOX
 #include <sandbox.h>
@@ -74,7 +75,8 @@
 #define HOST_REP_RENAME 9
 #define HOST_REP_SYMLINK 10
 #define HOST_REP_UNLINK 11
-#define TERMINATE_SANDBOX 12
+#define HOST_REP_GETSERV 12
+#define TERMINATE_SANDBOX 13
 
 #define SANDBOX_FINISHED 100
 #define SANDBOX_REQ_FETCHCONN 101
@@ -86,6 +88,7 @@
 #define SANDBOX_REQ_RENAME 107
 #define SANDBOX_REQ_SYMLINK 108
 #define SANDBOX_REQ_UNLINK 109
+#define SANDBOX_REQ_GETSERVBYNAME 110
 
 #ifndef NO_SANDBOX
 /* fetch sandbox control block */
@@ -143,6 +146,15 @@ struct fetchconn_req {
 
 struct fetchconn_rep {
   int ref;
+} __packed;
+
+struct getserv_req {
+  char    name[URL_SCHEMELEN+1];
+  char    proto[URL_SCHEMELEN+1];
+} __packed;
+
+struct getserv_rep {
+  struct servent se;
 } __packed;
 
 struct outf_req {
@@ -289,6 +301,9 @@ fetch_insandbox(char *origurl, const char *origpath)
 	struct fetchconn *fconn;
 	struct fetchconn_req fcreq;
 	struct fetchconn_rep fcrep;
+  struct servent *se;
+  struct getserv_req gsreq;
+  struct getserv_rep gsrep;
 	struct outf_req ofreq;
 	struct outf_rep ofrep;
 	FILE *ofstream;
@@ -370,6 +385,37 @@ fetch_insandbox(char *origurl, const char *origpath)
         free(buffer);
 #endif
 			  break;
+      }
+      case SANDBOX_REQ_GETSERVBYNAME: {
+        DPRINTF("SANDBOX_REQ_GETSERVBYNAME");
+        if(len != sizeof(struct getserv_req)) {
+          DPRINTF("Ouch receive size mismatch!");
+          exit(-1);
+        }
+        memmove(&gsreq, buffer, len);
+        free(buffer);
+        /* Let's get the actual conn */
+        DPRINTF("Name: %s Proto: %s", gsreq.name, gsreq.proto);
+        se = getservbyname(gsreq.name, gsreq.proto);
+
+        /* Ops */
+        if (!se) {
+          DPRINTF("Failed to get servent");
+          errx(-1, "getservbyname()");
+        }
+        DPRINTF("Got servent");
+
+        /* Send back to the sandbox what is needed */
+
+        memmove(&gsrep.se, se, sizeof(struct servent));
+        bzero(se, sizeof(struct servent));
+        
+        iov_req.iov_base = &gsrep;
+        iov_req.iov_len = sizeof(gsrep);
+        
+        if (host_rpc(fscb, HOST_REP_GETSERV, &iov_req, 1, NULL, 0, NULL) < 0)
+          err(-1, "host_rpc");
+        break;
       }
       case SANDBOX_REQ_OUTF: {
         DPRINTF("SANDBOX_REQ_OUTF");
@@ -711,6 +757,62 @@ fetch_connect_inparent(const char *host, int port, int af, int verbose)
 
   DPRINTF("OK, we have the conn");
   return conn;
+}
+
+/* called in sandboxed process */
+struct servent *
+getservbyname_inparent(const char *name, const char *proto)
+{
+  struct servent *se;
+  struct getserv_req gsreq;
+  struct getserv_rep gsrep;
+  uint32_t seqno = 0;
+  struct iovec iov_req, iov_rep;
+  uint32_t opno;
+  u_char *buffer;
+  size_t len;
+
+  bzero(&gsreq, sizeof(struct getserv_req));
+  bzero(&gsrep, sizeof(struct getserv_rep));
+
+  strlcpy(gsreq.name, name, MMIN(strlen(name) + 1, URL_SCHEMELEN));
+  strlcpy(gsreq.proto, proto, MMIN(strlen(proto) + 1, URL_SCHEMELEN));
+
+  /*bzero(&iov_req, sizeof(struct iovec));*/
+  /*bzero(&iov_rep, sizeof(struct iovec));*/
+
+  iov_req.iov_base = &gsreq;
+  iov_req.iov_len = sizeof(gsreq);
+
+  DPRINTF("Proxying getservbyname call to parent");
+
+  if (sandbox_sendrpc(fscb, SANDBOX_REQ_GETSERVBYNAME, seqno, &iov_req, 1) < 0)
+    err(-1, "sandbox_sendrpc");
+
+  /* Get a ptr to fdarry and update the number of fds we are expecting */
+  if (sandbox_recvrpc(fscb, &opno, &seqno, &buffer, &len) < 0) {
+    if (errno == EPIPE)
+      DPRINTF("[XXX] EPIPE");
+    else
+      DPRINTF("[XXX] sandbox_recvrpc");
+    exit(-1);
+  }
+
+  /* Demangle data */
+  if (len != sizeof(struct getserv_rep)) {
+    DPRINTF("Received len mismatch");
+    exit(-1);
+  }
+  memmove(&gsrep, buffer, len);
+
+  // Allocate servent and copy received one into it
+  if ((se = calloc(1, sizeof(struct servent))) == NULL)
+    return NULL;
+
+  memmove(se, &gsrep.se, sizeof(struct servent));
+
+  DPRINTF("OK, we have the servent");
+  return se;
 }
 
 static void

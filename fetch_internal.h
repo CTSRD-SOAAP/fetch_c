@@ -93,6 +93,7 @@ int rv;
 /* Prototypes */
 #ifndef NO_SANDBOX
 conn_t *fetch_connect_inparent(const char *, int, int, int);
+struct servent *getservbyname_inparent(const char *, const char *);
 void fetch_sandbox_init(void);
 void fetch_sandbox_wait(void);
 #endif
