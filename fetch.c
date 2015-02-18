@@ -55,7 +55,7 @@ __FBSDID("$FreeBSD: stable/9/usr.bin/fetch/fetch.c 244499 2012-12-20 18:13:04Z e
 #define TIMEOUT		120
 
 #ifdef SANDBOX_FETCH
-__soaap_callgates(net, connect, fopen, stat, utimes, mkstemps, rename, symlink, unlink)
+__soaap_callgates(net, connect, fopen, stat, utimes, mkstemps, rename, symlink, unlink, getservbyname)
 #endif
 
 /* Option flags */
